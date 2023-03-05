@@ -1,0 +1,219 @@
+---
+title: "Canadian Prime Ministers"
+author: "Julie Nguyen"
+date: "`r Sys.time()`"
+date-format: "D MMMM YYYY"
+format:
+  pdf:
+    documentclass: article
+    papersize: a4
+    geometry: margin = 1in
+    mainfont: "Garamond"
+    sansfont: "Garamond"
+thanks: 'Code and data are available at: '
+number-sections: true
+bibliography: reference.bib
+execute: 
+  message: false
+  warning: false
+  echo: false
+---
+
+## Introduction
+This paper serves as a practice of gathering data through web scraping. The practice aims at reproducing the list of Canadian Prime Ministers from 1815 to present using rvest (@rvest) and Selector Gadget. 
+
+## Data and Findings
+The information of Canadian Prime Ministers is gathered from Wikipedia using Selector Gadget. Other packages are also utilizes such as janitor (@janitor), tidyverse (@tidyverse) for cleaning and kableExtra (@kableExtra) for visualization.
+
+I used set.seed() and sample() to simulate the list to see how the table will look like.
+
+```{r}
+library(babynames)
+library(tidyverse)
+
+set.seed(001)
+
+simulated_dataset <-
+  tibble(
+    prime_minister = sample(
+      x = babynames |> filter(prop > 0.01) |>
+        select(name) |> unique() |> unlist(),
+      size = 10,
+      replace = FALSE
+    ),
+    birth_year = sample(
+      x = c(1750:1990),
+      size = 10,
+      replace = TRUE
+    ),
+    years_lived = sample(
+      x = c(50:100),
+      size = 10,
+      replace = TRUE
+    ),
+    death_year = birth_year + years_lived,
+    party = sample(
+      x = c(
+        "Liberal",
+        "Conservative",
+        "Progressive Conservative",
+        "Other"
+      ),
+      size = 10,
+      replace = TRUE
+    )
+  ) |>
+  select(prime_minister, birth_year, death_year, party) |>
+  arrange(birth_year)
+
+simulated_dataset
+```
+
+
+The data is first scraped from the site using xpath, and rvest (@rvest) is used to download and save the input.
+
+```{r}
+#| eval: false
+#| echo: true
+
+library(rvest)
+library(tidyverse)
+library(xml2)
+
+raw_data <-
+  read_html("https://en.wikipedia.org/wiki/List_of_prime_ministers_of_Canada")
+
+write_html(raw_data, "C:/Users/anjul/OneDrive/Documents/iSchool/Winter 2023/INF312/Canadian-Prime-Ministers/inputs/pms.html")
+```
+
+Since the table consists of merge cells with notes, I removed those cells to choose the most important information that I need, including name, birth and death year, term of office and political party. I cleaned each category separately then merge them together to produce the final table.
+```{r}
+#| eval: false
+#| echo: true
+
+library(rvest)
+library(tidyverse)
+library(janitor)
+library(kableExtra)
+library(knitr)
+
+raw_data <- read_html(here::here("inputs/pms.html"))
+
+parse_data <-
+  raw_data |>
+  html_element(xpath = '//*[@id="mw-content-text"]/div[1]/table[2]') |>
+  html_table()
+
+# Clean table
+cleaned_data <- parse_data[-c(2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,57),-c(2,7,11)] %>%
+  clean_names() %>%
+  mutate(no = rep(1:28))
+
+# Extract birth and death year
+dob <- cleaned_data %>%
+  separate(
+    name_birth_death,
+    into = c("name", "date"),
+    sep = "\\(",
+    extra = "merge") %>%
+  mutate(born = str_extract(date, "[[:digit:]]{4}–[[:digit:]]{4}"),
+         alive = str_extract(date, "b.[[:space:]][[:digit:]]{4}")) %>% 
+  select(name, born, alive)
+  
+cleaned_dob <- dob %>%
+  separate(born, into = c("birth", "died"),
+           sep = "–") %>%  
+  mutate(born = str_remove_all(alive, "b.[[:space:]]"),
+         birth = if_else(!is.na(alive), born, birth)) %>%
+  select(-c(born, alive))
+
+# Clean office term
+office_term_clean <- cleaned_data %>% 
+  mutate(term_of_office = str_extract(term_of_office, "[[:digit:]]{4}"),
+         term_of_office_2 = str_extract(term_of_office_2, "[[:digit:]]{4}")
+  ) %>%
+  rename("office_start" = term_of_office, "office_end" = term_of_office_2) %>% 
+  select(office_start, office_end)
+
+# Clean political party
+party_clean <- cleaned_data %>% 
+  mutate(political_party = str_remove(political_party, "Ldr.[[:space:]][[:digit:]]{4}"),
+         political_party = str_remove(political_party, "[()]")) %>% 
+  select(political_party)
+
+```
+
+Then, I visualized the table using kableExtra (@kableExtra) with 6 columns showing name, birth and death year, terms of office, and the political party.
+
+```{r}
+#| eval: true
+
+library(rvest)
+library(tidyverse)
+library(janitor)
+library(kableExtra)
+library(knitr)
+
+raw_data <- read_html(here::here("inputs/pms.html"))
+
+parse_data <-
+  raw_data |>
+  html_element(xpath = '//*[@id="mw-content-text"]/div[1]/table[2]') |>
+  html_table()
+
+# Clean table
+cleaned_data <- parse_data[-c(2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,57),-c(2,7,11)] %>%
+  clean_names() %>%
+  mutate(no = rep(1:28))
+
+# Extract birth and death year
+dob <- cleaned_data %>%
+  separate(
+    name_birth_death,
+    into = c("name", "date"),
+    sep = "\\(",
+    extra = "merge") %>%
+  mutate(born = str_extract(date, "[[:digit:]]{4}–[[:digit:]]{4}"),
+         alive = str_extract(date, "b.[[:space:]][[:digit:]]{4}")) %>% 
+  select(name, born, alive)
+  
+cleaned_dob <- dob %>%
+  separate(born, into = c("birth", "died"),
+           sep = "–") %>%  
+  mutate(born = str_remove_all(alive, "b.[[:space:]]"),
+         birth = if_else(!is.na(alive), born, birth)) %>%
+  select(-c(born, alive))
+
+# Clean office term
+office_term_clean <- cleaned_data %>% 
+  mutate(term_of_office = str_extract(term_of_office, "[[:digit:]]{4}"),
+         term_of_office_2 = str_extract(term_of_office_2, "[[:digit:]]{4}")
+  ) %>%
+  rename("office_start" = term_of_office, "office_end" = term_of_office_2) %>% 
+  select(office_start, office_end)
+
+# Clean political party
+party_clean <- cleaned_data %>% 
+  mutate(political_party = str_remove(political_party, "Ldr.[[:space:]][[:digit:]]{4}"),
+         political_party = str_remove(political_party, "[()]")) %>%
+  mutate(political_party = str_remove_all(political_party, "[()//]")) %>%
+  select(political_party)
+
+# Merge table
+final_table <- bind_cols(c(cleaned_dob,office_term_clean,party_clean))
+
+# Generate table
+final_table %>% knitr::kable(col.names = c("Prime Minister",
+                             "Birth year",            
+                             "Death year",                    
+                             "Took office",
+                             "Left office",
+                             "Political Party"))
+```
+
+
+## Reflections
+For me, this web scraping practice was both fun and challegnging. It provides me an alternative way to gather the data that I need besides API or download directing the dataset. The string extract and remove are definitely the hardest parts to deal with since I do not know the formula for the pattern. It took me a long time to separate de birth and death year from the name. I also find removing parenthesis and brackets in a string difficult. In the future, I hope to improve the terms of office, separating the day, month, and year, so that I can count the days the PMs run the office. I would also want to know more about how I can deal with merge cells.
+
+## References
+
